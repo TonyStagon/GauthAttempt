@@ -24,7 +24,11 @@
         "backgroundColor": "#ffffff"
       },
       "edgeToEdgeEnabled": true,
-      "permissions": ["CAMERA"],
+      "permissions": [
+        "CAMERA",
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
+      ],
       "package": "com.yourcompany.cameraquestionapp"
     },
     "web": {
@@ -37,6 +41,11 @@
           "cameraPermission": "Allow camera-question-app to access your camera to capture question images."
         }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "e173c253-56c4-4ed5-9dd6-9a41e6706891"
+      }
+    }
   }
 }

@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { View, StyleSheet, Dimensions } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, StyleSheet, PanResponder, Dimensions } from 'react-native';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -33,123 +33,123 @@ const CropBox = ({ imageWidth, imageHeight, actualImageWidth, actualImageHeight,
     height: initialHeight,
   });
 
-  const dragState = useRef({
-    isDragging: false,
-    type: null,
-    startX: 0,
-    startY: 0,
-    startBox: null,
-  });
-
   useEffect(() => {
     if (onCropChange) {
       onCropChange(boxDimensions);
     }
-  }, [boxDimensions]);
+  }, [boxDimensions, onCropChange]);
 
-  const minSize = 80;
+  const handleSize = 30;
+  const minSize = 40;
 
-  const handleMouseDown = (type) => (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    
-    const touch = e.nativeEvent.touches ? e.nativeEvent.touches[0] : e.nativeEvent;
-    
-    dragState.current = {
-      isDragging: true,
-      type,
-      startX: touch.pageX || touch.clientX,
-      startY: touch.pageY || touch.clientY,
-      startBox: { ...boxDimensions },
-    };
+  const createPanResponder = (handleType) => {
+    return PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderGrant: () => {},
+      onPanResponderMove: (evt, gestureState) => {
+        const { dx, dy } = gestureState;
+        
+        setBoxDimensions(prev => {
+          let newDimensions = { ...prev };
+          let newDim = { ...prev };
 
-    document.addEventListener('mousemove', handleMouseMove);
-    document.addEventListener('mouseup', handleMouseUp);
-    document.addEventListener('touchmove', handleMouseMove);
-    document.addEventListener('touchend', handleMouseUp);
+          try {
+            switch (handleType) {
+              case 'move':
+                newDim.x = Math.max(offsetX, Math.min(prev.x + dx, offsetX + displayedImageWidth - prev.width));
+                newDim.y = Math.max(offsetY, Math.min(prev.y + dy, offsetY + displayedImageHeight - prev.height));
+                break;
+              
+              case 'topLeft':
+                newDim.width = Math.max(minSize, prev.width - dx);
+                newDim.height = Math.max(minSize, prev.height - dy);
+                newDim.x = prev.x + dx;
+                newDim.y = prev.y + dy;
+                
+                // Adjust if goes out of bounds
+                if (newDim.x < offsetX) {
+                  newDim.width += (newDim.x - offsetX);
+                  newDim.x = offsetX;
+                }
+                if (newDim.y < offsetY) {
+                  newDim.height += (newDim.y - offsetY);
+                  newDim.y = offsetY;
+                }
+                break;
+              
+              case 'topRight':
+                newDim.width = Math.max(minSize, prev.width + dx);
+                newDim.height = Math.max(minSize, prev.height - dy);
+                newDim.y = prev.y + dy;
+                
+                // Adjust if goes out of bounds
+                if (prev.x + newDim.width > offsetX + displayedImageWidth) {
+                  newDim.width = offsetX + displayedImageWidth - prev.x;
+                }
+                if (newDim.y < offsetY) {
+                  newDim.height += (newDim.y - offsetY);
+                  newDim.y = offsetY;
+                }
+                break;
+              
+              case 'bottomLeft':
+                newDim.width = Math.max(minSize, prev.width - dx);
+                newDim.height = Math.max(minSize, prev.height + dy);
+                newDim.x = prev.x + dx;
+                
+                // Adjust if goes out of bounds
+                if (newDim.x < offsetX) {
+                  newDim.width += (newDim.x - offsetX);
+                  newDim.x = offsetX;
+                }
+                if (prev.y + newDim.height > offsetY + displayedImageHeight) {
+                  newDim.height = offsetY + displayedImageHeight - prev.y;
+                }
+                break;
+              
+              case 'bottomRight':
+                newDim.width = Math.max(minSize, prev.width + dx);
+                newDim.height = Math.max(minSize, prev.height + dy);
+                
+                // Adjust if goes out of bounds
+                if (prev.x + newDim.width > offsetX + displayedImageWidth) {
+                  newDim.width = offsetX + displayedImageWidth - prev.x;
+                }
+                if (prev.y + newDim.height > offsetY + displayedImageHeight) {
+                  newDim.height = offsetY + displayedImageHeight - prev.y;
+                }
+                break;
+            }
+            
+            // Final validate bounds for corner cases
+            newDim.x = Math.max(offsetX, newDim.x);
+            newDim.y = Math.max(offsetY, newDim.y);
+            newDim.width = Math.min(newDim.width, offsetX + displayedImageWidth - newDim.x);
+            newDim.height = Math.min(newDim.height, offsetY + displayedImageHeight - newDim.y);
+            
+            newDimensions = newDim;
+          } catch (error) {
+            console.log('Crop operation error resolved safely');
+            return prev;
+          }
+
+          if (onCropChange) {
+            onCropChange(newDimensions);
+          }
+
+          return newDimensions;
+        });
+      },
+      onPanResponderRelease: () => {},
+    });
   };
 
-  const handleMouseMove = (e) => {
-    if (!dragState.current.isDragging) return;
-
-    const touch = e.touches ? e.touches[0] : e;
-    const currentX = touch.pageX || touch.clientX;
-    const currentY = touch.pageY || touch.clientY;
-    
-    const dx = currentX - dragState.current.startX;
-    const dy = currentY - dragState.current.startY;
-    
-    const startBox = dragState.current.startBox;
-    const type = dragState.current.type;
-    
-    let newDimensions = { ...startBox };
-
-    switch (type) {
-      case 'move':
-        newDimensions.x = Math.max(offsetX, Math.min(startBox.x + dx, offsetX + displayedImageWidth - startBox.width));
-        newDimensions.y = Math.max(offsetY, Math.min(startBox.y + dy, offsetY + displayedImageHeight - startBox.height));
-        break;
-      
-      case 'topLeft':
-        const newWidthTL = startBox.width - dx;
-        const newHeightTL = startBox.height - dy;
-        if (newWidthTL >= minSize && startBox.x + dx >= offsetX) {
-          newDimensions.x = startBox.x + dx;
-          newDimensions.width = newWidthTL;
-        }
-        if (newHeightTL >= minSize && startBox.y + dy >= offsetY) {
-          newDimensions.y = startBox.y + dy;
-          newDimensions.height = newHeightTL;
-        }
-        break;
-      
-      case 'topRight':
-        const newWidthTR = startBox.width + dx;
-        const newHeightTR = startBox.height - dy;
-        if (newWidthTR >= minSize && startBox.x + newWidthTR <= offsetX + displayedImageWidth) {
-          newDimensions.width = newWidthTR;
-        }
-        if (newHeightTR >= minSize && startBox.y + dy >= offsetY) {
-          newDimensions.y = startBox.y + dy;
-          newDimensions.height = newHeightTR;
-        }
-        break;
-      
-      case 'bottomLeft':
-        const newWidthBL = startBox.width - dx;
-        const newHeightBL = startBox.height + dy;
-        if (newWidthBL >= minSize && startBox.x + dx >= offsetX) {
-          newDimensions.x = startBox.x + dx;
-          newDimensions.width = newWidthBL;
-        }
-        if (newHeightBL >= minSize && startBox.y + newHeightBL <= offsetY + displayedImageHeight) {
-          newDimensions.height = newHeightBL;
-        }
-        break;
-      
-      case 'bottomRight':
-        const newWidthBR = startBox.width + dx;
-        const newHeightBR = startBox.height + dy;
-        if (newWidthBR >= minSize && startBox.x + newWidthBR <= offsetX + displayedImageWidth) {
-          newDimensions.width = newWidthBR;
-        }
-        if (newHeightBR >= minSize && startBox.y + newHeightBR <= offsetY + displayedImageHeight) {
-          newDimensions.height = newHeightBR;
-        }
-        break;
-    }
-
-    setBoxDimensions(newDimensions);
-  };
-
-  const handleMouseUp = () => {
-    dragState.current.isDragging = false;
-    
-    document.removeEventListener('mousemove', handleMouseMove);
-    document.removeEventListener('mouseup', handleMouseUp);
-    document.removeEventListener('touchmove', handleMouseMove);
-    document.removeEventListener('touchend', handleMouseUp);
-  };
+  const movePanResponder = createPanResponder('move');
+  const topLeftPanResponder = createPanResponder('topLeft');
+  const topRightPanResponder = createPanResponder('topRight');
+  const bottomLeftPanResponder = createPanResponder('bottomLeft');
+  const bottomRightPanResponder = createPanResponder('bottomRight');
 
   return (
     <View style={styles.container}>
@@ -175,35 +175,25 @@ const CropBox = ({ imageWidth, imageHeight, actualImageWidth, actualImageHeight,
             height: boxDimensions.height,
           },
         ]}
-        onStartShouldSetResponder={() => true}
-        onResponderGrant={handleMouseDown('move')}
-        onTouchStart={handleMouseDown('move')}
+        {...movePanResponder.panHandlers}
       >
         <View style={styles.border} />
         
         <View
           style={[styles.handle, styles.topLeft]}
-          onStartShouldSetResponder={() => true}
-          onResponderGrant={handleMouseDown('topLeft')}
-          onTouchStart={handleMouseDown('topLeft')}
+          {...topLeftPanResponder.panHandlers}
         />
         <View
           style={[styles.handle, styles.topRight]}
-          onStartShouldSetResponder={() => true}
-          onResponderGrant={handleMouseDown('topRight')}
-          onTouchStart={handleMouseDown('topRight')}
+          {...topRightPanResponder.panHandlers}
         />
         <View
           style={[styles.handle, styles.bottomLeft]}
-          onStartShouldSetResponder={() => true}
-          onResponderGrant={handleMouseDown('bottomLeft')}
-          onTouchStart={handleMouseDown('bottomLeft')}
+          {...bottomLeftPanResponder.panHandlers}
         />
         <View
           style={[styles.handle, styles.bottomRight]}
-          onStartShouldSetResponder={() => true}
-          onResponderGrant={handleMouseDown('bottomRight')}
-          onTouchStart={handleMouseDown('bottomRight')}
+          {...bottomRightPanResponder.panHandlers}
         />
       </View>
     </View>
@@ -235,7 +225,6 @@ const styles = StyleSheet.create({
     borderWidth: 3,
     borderColor: '#00BCD4',
     borderRadius: 8,
-    cursor: 'move',
   },
   border: {
     flex: 1,
@@ -251,27 +240,22 @@ const styles = StyleSheet.create({
     borderRadius: 15,
     borderWidth: 3,
     borderColor: '#fff',
-    cursor: 'pointer',
   },
   topLeft: {
     top: -15,
     left: -15,
-    cursor: 'nw-resize',
   },
   topRight: {
     top: -15,
     right: -15,
-    cursor: 'ne-resize',
   },
   bottomLeft: {
     bottom: -15,
     left: -15,
-    cursor: 'sw-resize',
   },
   bottomRight: {
     bottom: -15,
     right: -15,
-    cursor: 'se-resize',
   },
 });
 
