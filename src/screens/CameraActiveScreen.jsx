@@ -12,6 +12,8 @@ import {
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Ionicons } from '@expo/vector-icons';
 import CropBox from '../components/CropBox';
+import OptimizedCropBox from '../components/OptimizedCropBox';
+import SmoothResizeCropBox from '../components/SmoothResizeCropBox';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -158,13 +160,17 @@ const CameraActiveScreen = ({ navigation }) => {
             style={styles.previewImage}
             resizeMode="contain"
           />
-          <CropBox
+          {/* ✅ BEST PERFORMANCE: SmoothResizeCropBox - smooth drag AND resize */}
+          <SmoothResizeCropBox
             imageWidth={SCREEN_WIDTH}
             imageHeight={SCREEN_HEIGHT - 200}
-            actualImageWidth={capturedImage.width}
-            actualImageHeight={capturedImage.height}
             onCropChange={setCropRegion}
           />
+          {/*
+          Optional alternatives:
+          <OptimizedCropBox - Only good for dragging, limited...
+          <CropBox - Original version with occasional hitting-fixed-resizing-problematic modes scale modes related...
+          */}
         </View>
       )}
 

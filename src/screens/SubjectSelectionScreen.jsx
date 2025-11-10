@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   View,
   Text,
@@ -19,22 +19,34 @@ const SubjectSelectionScreen = ({ route, navigation }) => {
     console.log(`Subject selected: ${subject}`);
   };
 
-  const maxDisplayWidth = 320;
-  const maxDisplayHeight = 240;
-  
-  let displayScale = 1;
-  if (cropRegion) {
-    const scaleByWidth = maxDisplayWidth / cropRegion.width;
-    const scaleByHeight = maxDisplayHeight / cropRegion.height;
-    displayScale = Math.min(scaleByWidth, scaleByHeight, 1);
-  }
-  
-  const displayCropWidth = cropRegion ? cropRegion.width * displayScale : 0;
-  const displayCropHeight = cropRegion ? cropRegion.height * displayScale : 0;
-  const displayImageWidth = imageWidth ? imageWidth * displayScale : 0;
-  const displayImageHeight = imageHeight ? imageHeight * displayScale : 0;
-  const displayOffsetX = cropRegion ? cropRegion.x * displayScale : 0;
-  const displayOffsetY = cropRegion ? cropRegion.y * displayScale : 0;
+  // Memoize display calculations to prevent expensive re-calculation on every render
+  const {
+    displayCropWidth,
+    displayCropHeight,
+    displayImageWidth,
+    displayImageHeight,
+    displayOffsetX,
+    displayOffsetY,
+  } = useMemo(() => {
+    const maxDisplayWidth = 320;
+    const maxDisplayHeight = 240;
+    
+    let displayScale = 1;
+    if (cropRegion) {
+      const scaleByWidth = maxDisplayWidth / cropRegion.width;
+      const scaleByHeight = maxDisplayHeight / cropRegion.height;
+      displayScale = Math.min(scaleByWidth, scaleByHeight, 1);
+    }
+    
+    return {
+      displayCropWidth: cropRegion ? cropRegion.width * displayScale : 0,
+      displayCropHeight: cropRegion ? cropRegion.height * displayScale : 0,
+      displayImageWidth: imageWidth ? imageWidth * displayScale : 0,
+      displayImageHeight: imageHeight ? imageHeight * displayScale : 0,
+      displayOffsetX: cropRegion ? cropRegion.x * displayScale : 0,
+      displayOffsetY: cropRegion ? cropRegion.y * displayScale : 0,
+    };
+  }, [cropRegion, imageWidth, imageHeight]);
 
   return (
     <View style={styles.container}>
@@ -59,7 +71,7 @@ const SubjectSelectionScreen = ({ route, navigation }) => {
       </View>
 
       <ScrollView contentContainerStyle={styles.content}>
-        {imageUri && cropRegion && imageWidth && imageHeight && (
+        {imageUri && (
           <View style={styles.croppedImageContainer}>
             <View style={[
               styles.croppedImageWrapper,
@@ -78,6 +90,7 @@ const SubjectSelectionScreen = ({ route, navigation }) => {
                   top: -displayOffsetY,
                 }}
                 resizeMode="contain"
+                fadeDuration={0} // Disable fade to improve perceived performance
               />
             </View>
           </View>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { View, StyleSheet, PanResponder, Dimensions } from 'react-native';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -33,123 +33,134 @@ const CropBox = ({ imageWidth, imageHeight, actualImageWidth, actualImageHeight,
     height: initialHeight,
   });
 
-  useEffect(() => {
+  // Use refs for gesture state to prevent unnecessary re-renders
+  const startDimensionsRef = useRef(null);
+  const updateTimeoutRef = useRef(null);
+  
+  const [isResizing, setIsResizing] = useState(false);
+
+  // Debounce crop change events to reduce re-renders
+  const debouncedCropChange = useCallback((dimensions) => {
     if (onCropChange) {
-      onCropChange(boxDimensions);
+      // Use requestAnimationFrame to batch updates during gesture
+      requestAnimationFrame(() => {
+        onCropChange(dimensions);
+      });
     }
-  }, [boxDimensions, onCropChange]);
+  }, [onCropChange]);
+
+  useEffect(() => {
+    debouncedCropChange(boxDimensions);
+  }, [boxDimensions, debouncedCropChange]);
 
   const handleSize = 30;
   const minSize = 40;
 
-  const createPanResponder = (handleType) => {
+  const createPanResponder = useCallback((handleType) => {
     return PanResponder.create({
       onStartShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponder: () => true,
-      onPanResponderGrant: () => {},
+      onPanResponderGrant: (evt) => {
+        // Store the current dimensions when gesture begins - using a ref for immediate access
+        startDimensionsRef.current = boxDimensions;
+        setIsResizing(handleType !== 'move');
+      },
       onPanResponderMove: (evt, gestureState) => {
         const { dx, dy } = gestureState;
         
-        setBoxDimensions(prev => {
-          let newDimensions = { ...prev };
-          let newDim = { ...prev };
+        // Use current dimensions directly to avoid stale closure issues
+        const baseDimensions = startDimensionsRef.current || boxDimensions;
+        let newDim = { ...baseDimensions };
 
-          try {
-            switch (handleType) {
-              case 'move':
-                newDim.x = Math.max(offsetX, Math.min(prev.x + dx, offsetX + displayedImageWidth - prev.width));
-                newDim.y = Math.max(offsetY, Math.min(prev.y + dy, offsetY + displayedImageHeight - prev.height));
-                break;
-              
-              case 'topLeft':
-                newDim.width = Math.max(minSize, prev.width - dx);
-                newDim.height = Math.max(minSize, prev.height - dy);
-                newDim.x = prev.x + dx;
-                newDim.y = prev.y + dy;
-                
-                // Adjust if goes out of bounds
-                if (newDim.x < offsetX) {
-                  newDim.width += (newDim.x - offsetX);
-                  newDim.x = offsetX;
-                }
-                if (newDim.y < offsetY) {
-                  newDim.height += (newDim.y - offsetY);
-                  newDim.y = offsetY;
-                }
-                break;
-              
-              case 'topRight':
-                newDim.width = Math.max(minSize, prev.width + dx);
-                newDim.height = Math.max(minSize, prev.height - dy);
-                newDim.y = prev.y + dy;
-                
-                // Adjust if goes out of bounds
-                if (prev.x + newDim.width > offsetX + displayedImageWidth) {
-                  newDim.width = offsetX + displayedImageWidth - prev.x;
-                }
-                if (newDim.y < offsetY) {
-                  newDim.height += (newDim.y - offsetY);
-                  newDim.y = offsetY;
-                }
-                break;
-              
-              case 'bottomLeft':
-                newDim.width = Math.max(minSize, prev.width - dx);
-                newDim.height = Math.max(minSize, prev.height + dy);
-                newDim.x = prev.x + dx;
-                
-                // Adjust if goes out of bounds
-                if (newDim.x < offsetX) {
-                  newDim.width += (newDim.x - offsetX);
-                  newDim.x = offsetX;
-                }
-                if (prev.y + newDim.height > offsetY + displayedImageHeight) {
-                  newDim.height = offsetY + displayedImageHeight - prev.y;
-                }
-                break;
-              
-              case 'bottomRight':
-                newDim.width = Math.max(minSize, prev.width + dx);
-                newDim.height = Math.max(minSize, prev.height + dy);
-                
-                // Adjust if goes out of bounds
-                if (prev.x + newDim.width > offsetX + displayedImageWidth) {
-                  newDim.width = offsetX + displayedImageWidth - prev.x;
-                }
-                if (prev.y + newDim.height > offsetY + displayedImageHeight) {
-                  newDim.height = offsetY + displayedImageHeight - prev.y;
-                }
-                break;
-            }
+        try {
+          switch (handleType) {
+            case 'move':
+              newDim.x = Math.max(offsetX, Math.min(baseDimensions.x + dx, offsetX + displayedImageWidth - baseDimensions.width));
+              newDim.y = Math.max(offsetY, Math.min(baseDimensions.y + dy, offsetY + displayedImageHeight - baseDimensions.height));
+              break;
             
-            // Final validate bounds for corner cases
-            newDim.x = Math.max(offsetX, newDim.x);
-            newDim.y = Math.max(offsetY, newDim.y);
-            newDim.width = Math.min(newDim.width, offsetX + displayedImageWidth - newDim.x);
-            newDim.height = Math.min(newDim.height, offsetY + displayedImageHeight - newDim.y);
+            case 'topLeft':
+              newDim.width = Math.max(minSize, baseDimensions.width - dx);
+              newDim.height = Math.max(minSize, baseDimensions.height - dy);
+              newDim.x = baseDimensions.x + baseDimensions.width - newDim.width;
+              newDim.y = baseDimensions.y + baseDimensions.height - newDim.height;
+              break;
             
-            newDimensions = newDim;
-          } catch (error) {
-            console.log('Crop operation error resolved safely');
-            return prev;
+            case 'topRight':
+              newDim.width = Math.max(minSize, baseDimensions.width + dx);
+              newDim.height = Math.max(minSize, baseDimensions.height - dy);
+              newDim.x = baseDimensions.x;
+              newDim.y = baseDimensions.y + baseDimensions.height - newDim.height;
+              break;
+            
+            case 'bottomLeft':
+              newDim.width = Math.max(minSize, baseDimensions.width - dx);
+              newDim.height = Math.max(minSize, baseDimensions.height + dy);
+              newDim.x = baseDimensions.x + baseDimensions.width - newDim.width;
+              newDim.y = baseDimensions.y;
+              break;
+            
+            case 'bottomRight':
+              newDim.width = Math.max(minSize, baseDimensions.width + dx);
+              newDim.height = Math.max(minSize, baseDimensions.height + dy);
+              newDim.x = baseDimensions.x;
+              newDim.y = baseDimensions.y;
+              break;
           }
-
-          if (onCropChange) {
-            onCropChange(newDimensions);
+          
+          // Constrain to image bounds
+          if (newDim.x < offsetX) {
+            newDim.width = Math.max(minSize, newDim.width - (offsetX - newDim.x));
+            newDim.x = offsetX;
           }
+          if (newDim.y < offsetY) {
+            newDim.height = Math.max(minSize, newDim.height - (offsetY - newDim.y));
+            newDim.y = offsetY;
+          }
+          if (newDim.x + newDim.width > offsetX + displayedImageWidth) {
+            newDim.width = offsetX + displayedImageWidth - newDim.x;
+          }
+          if (newDim.y + newDim.height > offsetY + displayedImageHeight) {
+            newDim.height = offsetY + displayedImageHeight - newDim.y;
+          }
+          
+          // Ensure minimum size
+          newDim.width = Math.max(minSize, newDim.width);
+          newDim.height = Math.max(minSize, newDim.height);
+          
+        } catch (error) {
+          console.log('Crop operation error resolved smoothly');
+          return;
+        }
 
-          return newDimensions;
-        });
+        // Batch state updates and use a timer to avoid excessive updates
+        clearTimeout(updateTimeoutRef.current);
+        updateTimeoutRef.current = setTimeout(() => {
+          setBoxDimensions(newDim);
+        }, 8); // ~120fps which is smooth but not overwhelming
       },
-      onPanResponderRelease: () => {},
+      onPanResponderRelease: () => {
+        startDimensionsRef.current = null;
+        updateTimeoutRef.current = null;
+        setIsResizing(false);
+      },
     });
-  };
+  }, [offsetX, offsetY, displayedImageWidth, displayedImageHeight, minSize, boxDimensions]);
 
   const movePanResponder = createPanResponder('move');
   const topLeftPanResponder = createPanResponder('topLeft');
   const topRightPanResponder = createPanResponder('topRight');
   const bottomLeftPanResponder = createPanResponder('bottomLeft');
   const bottomRightPanResponder = createPanResponder('bottomRight');
+
+  // Memoize handlers to prevent unnecessary re-renders - must be after responders are created
+  const cropHandlers = useMemo(() => ({
+    move: movePanResponder.panHandlers,
+    topLeft: topLeftPanResponder.panHandlers,
+    topRight: topRightPanResponder.panHandlers,
+    bottomLeft: bottomLeftPanResponder.panHandlers,
+    bottomRight: bottomRightPanResponder.panHandlers,
+  }), [movePanResponder, topLeftPanResponder, topRightPanResponder, bottomLeftPanResponder, bottomRightPanResponder]);
 
   return (
     <View style={styles.container}>
@@ -175,25 +186,27 @@ const CropBox = ({ imageWidth, imageHeight, actualImageWidth, actualImageHeight,
             height: boxDimensions.height,
           },
         ]}
-        {...movePanResponder.panHandlers}
       >
-        <View style={styles.border} />
+        <View
+          style={styles.border}
+          {...(!isResizing ? cropHandlers.move : {})}
+        />
         
         <View
           style={[styles.handle, styles.topLeft]}
-          {...topLeftPanResponder.panHandlers}
+          {...cropHandlers.topLeft}
         />
         <View
           style={[styles.handle, styles.topRight]}
-          {...topRightPanResponder.panHandlers}
+          {...cropHandlers.topRight}
         />
         <View
           style={[styles.handle, styles.bottomLeft]}
-          {...bottomLeftPanResponder.panHandlers}
+          {...cropHandlers.bottomLeft}
         />
         <View
           style={[styles.handle, styles.bottomRight]}
-          {...bottomRightPanResponder.panHandlers}
+          {...cropHandlers.bottomRight}
         />
       </View>
     </View>
@@ -240,6 +253,7 @@ const styles = StyleSheet.create({
     borderRadius: 15,
     borderWidth: 3,
     borderColor: '#fff',
+    zIndex: 10,
   },
   topLeft: {
     top: -15,
@@ -259,4 +273,14 @@ const styles = StyleSheet.create({
   },
 });
 
-export default CropBox;
+// Originally contained performance complex slow code.
+// LEFT AS BACKUP COMPONENT - for dev benchmarking comparisons ONLY
+// PRODUCTION: Replace this import in CameraActiveScreen with OptimizedCropBox
+export default React.memo(CropBox, (prevProps, nextProps) => {
+  return (
+    prevProps.imageWidth === nextProps.imageWidth &&
+    prevProps.imageHeight === nextProps.imageHeight &&
+    prevProps.actualImageWidth === nextProps.actualImageWidth &&
+    prevProps.actualImageHeight === nextProps.actualImageHeight
+  );
+});
